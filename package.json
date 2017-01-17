@@ -1,0 +1,10 @@
+{
+  "name": "funui",
+  "version": "0.0.1",
+  "description": "FunUI",
+  "devDependencies": {
+    "html-minifier": "3.2.3",
+    "jsdom" : "9.8.3",
+    "bluebird" : "*"
+  }
+}

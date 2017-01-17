@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>alert</title>
+    <link href="../css/common.css" rel="stylesheet" type="text/css"/>
+    <link href="../css/FunUI.css" rel="stylesheet" type="text/css"/>
+    <script type="text/javascript" src="../js/FunUI.js"></script>
+    <style id="exportStyle" type="text/css">
+    </style>
+    <script id="en" class="F-Lang" type="application/json">
+        {
+            "prompt.btn_ok.label": "OK",
+            "prompt.btn_cancel.label": "cancel"
+        }
+    </script>
+</head>
+<body bgcolor="black">
+<div id="alert" class="F-Prompt">
+    <h2 class="title"></h2>
+    <div class="content">
+
+    </div>
+    <div class="buttonBar">
+        <div class="F-Button green tiny yes">_(prompt.btn_ok.label)</div>
+    </div>
+</div>
+<script id="exportScript" type="text/javascript">
+    FunUI.traits.alert = {
+        __init__: function () {
+            // todo: trait code
+        }
+    };
+</script>
+<script id="testScript" type="text/javascript">
+    F$("alert").on(FunUI.events.INITIALIZED, function (e) {
+        F$alert("haha", "hahahahahahah1");
+        F$alert("haha", "hahahahahahah2");
+        F$alert("haha", "hahahahahahah3");
+        F$alert("haha", "hahahahahahah4");
+    });
+</script>
+</body>
+</html>

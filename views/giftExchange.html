@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>giftExchange</title>
+    <link href="../css/common.css" rel="stylesheet" type="text/css"/>
+    <link href="../css/FunUI.css" rel="stylesheet" type="text/css"/>
+    <link href="../css/icons.css" rel="stylesheet" type="text/css"/>
+    <script type="text/javascript" src="../js/FunUI.js"></script>
+    <style id="exportStyle" type="text/css">
+        #giftExchange {
+            width: 620px;
+            height: 440px;
+        }
+
+        #giftExchange.viewSend .viewRequest {
+            display: none;
+        }
+
+        #giftExchange.viewRequest .viewSend {
+            display: none;
+        }
+
+        #giftExchange>.content {
+            padding: 0 20px;
+        }
+
+        #giftExchange>.content>.titleBar {
+            text-align: center;
+        }
+
+        #giftExchange>.content>.titleBar>* {
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        #giftExchange>.content>.titleBar>.title {
+            font-size: 18px;
+            color: #adba57;
+        }
+
+        #giftExchange>.content>.titleBar>.label {
+            font-size: 18px;
+            color: #888c44;
+        }
+
+        #giftExchange>.content>.searchBar {
+            text-align: center;
+        }
+
+        #giftExchange>.content>.searchBar>* {
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        #giftExchange>.content>.searchBar .F-RadioButton {
+            width: 120px;
+        }
+
+        #giftExchange_input {
+            width: 180px;
+        }
+
+        #giftExchange .control {
+            position: relative;
+            margin-top: 10px;
+        }
+
+        #giftExchange .control .F-Button {
+            float: right;
+        }
+
+        #giftExchange_list {
+            width: 535px;
+            height: 230px;
+            overflow-y: scroll;
+            padding: 5px;
+        }
+
+        #giftExchange_list>.F-ItemRenderer {
+            position: relative;
+            display: inline-block;
+            background-image: url("../imgs/gift/bg_friend_list.png");
+            width: 250px;
+            height: 68px;
+            margin: 3px;
+        }
+
+        #giftExchange_list>.F-ItemRenderer>.pic {
+            position: absolute;
+            left: 10px;
+            top: 15px;
+            width: 40px;
+            height: 40px;
+        }
+
+        #giftExchange_list>.F-ItemRenderer>.name {
+            position: absolute;
+            left: 60px;
+            top: 20px;
+            font-size: 18px;
+            color: #c4cb9e;
+        }
+
+        #giftExchange_list>.F-ItemRenderer>.checkbox {
+            position: absolute;
+            right: 10px;
+            top: 14px;
+        }
+    </style>
+</head>
+<body bgcolor="black">
+<div id="giftExchange" class="F-Window light" data-modal="true">
+    <div class="F-Button close"></div>
+    <div class="content">
+        <div class="titleBar viewSend">
+            <span class="title">SEND</span>
+            <div class="icon exp x48"></div>
+            <span class="label">1 hour 2x EXP boost</span>
+        </div>
+        <div class="titleBar viewRequest">
+            <span class="title">REQUEST</span>
+            <div class="icon live x48"></div>
+            <span class="label">InstaRevives</span>
+        </div>
+        <div class="searchBar">
+            <div id="giftExchange_input" class="F-TextInput" data-placeholder="SEARCH"></div>
+            <div class="F-Button search"></div>
+            <div class="F-RadioGroup">
+                <div class="F-RadioButton">Game Friends</div>
+                <div class="F-RadioButton selected">All Friends</div>
+            </div>
+        </div>
+        <ul id="giftExchange_list" class="F-List" data-multi-select="true">
+            <li class="F-ItemRenderer">
+                <img class="pic" src="" />
+                <span class="name"></span>
+                <div class="checkbox"><div class="hover"></div></div>
+            </li>
+        </ul>
+        <div class="control">
+            <div class="F-SelectAllCtrl">Select All</div>
+            <div class="F-Button darkGreen light viewRequest">REQUEST</div>
+            <div class="F-Button darkGreen light viewSend">SEND</div>
+        </div>
+    </div>
+</div>
+<script id="exportScript" type="text/javascript">
+    var giftExchangeModel = {
+        friends : new F$ArrayView({
+            filter : function(friend) {
+                var input = F$("giftExchange_input");
+                return friend.name.indexOf(input.getText()) >= 0;
+            }
+        })
+    };
+
+    FunUI.traits.giftExchange = {
+        SEND : "send",
+        REQUEST : "request",
+        __init__: function() {
+            var selectAllCtrl = this.getElementsByClassName('F-SelectAllCtrl')[0];
+            selectAllCtrl.listenTo(F$('giftExchange_list'));
+        },
+        show : function (op) {
+            if (op == this.SEND) {
+                this.removeClass("viewRequest");
+                this.addClass("viewSend");
+            } else {
+                this.removeClass("viewSend");
+                this.addClass("viewRequest");
+            }
+
+            this.open();
+        }
+    };
+
+    FunUI.traits.giftExchange_input = {
+        __init__: function() {
+            var input = this;
+            this.on(FunUI.events.TEXT_CHANGED, function() {
+                giftExchangeModel.friends.invalidate();
+            });
+        }
+    };
+
+    FunUI.traits.giftExchange_list = {
+    };
+
+    FunUI.traits.giftExchange_list.itemRenderer = {
+        __init__: function() {
+            this.labelName = this.getSubComponent("name");
+            this.pic = this.getSubComponent("pic");
+            this.checkbox = this.getSubComponent('checkbox');
+            var item = this;
+            this.checkbox.on("click", function() {
+                var list = item.list;
+                if (item.isSelected()) {
+                    list.deselectItem(item.index);
+                } else {
+                    list.selectItem(item.index);
+                }
+            })
+        },
+        render: function (data) {
+            this.labelName.innerHTML = data.name;
+            this.pic.src = data.pic;
+        }
+    };
+</script>
+<script id="testScript" type="text/javascript">
+    F$("giftExchange").on(FunUI.events.INITIALIZED, function (e) {
+
+        F$("giftExchange").show("send");
+
+        F$("giftExchange_list").setArrayView(giftExchangeModel.friends);
+
+        giftExchangeModel.friends.source = [
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world11",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world41",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world83",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world44",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world95",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world61",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world71",
+            },
+            {
+                pic: "https://fb-s-a-a.akamaihd.net/h-ak-xat1/v/t1.0-1/p50x50/188405_155150791209569_576396_n.jpg?oh=1001b758502ae5221f31cba92104396c&oe=58DDFA21&__gda__=1488058806_ff93aad96f2d5c11647d37bf12adcf28",
+                name : "world18",
+            }
+        ];
+    });
+</script>
+</body>
+</html>
