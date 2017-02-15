@@ -308,8 +308,8 @@ HTMLElement.prototype.delayCall = function (callback) {
     }
 };
 
-(function () {
-    HTMLElement.prototype.initFunUI = function () {
+HTMLElement.prototype.initFunUI = (function () {
+    return function () {
         if (typeof this.funUIInitialized != "undefined") {
             return false;
         }
@@ -509,7 +509,7 @@ Object.defineProperty(HTMLElement.prototype, "explicitHeight", {
     }
 });
 
-(function () {
+Object.defineProperty(HTMLElement.prototype, "tooltipData", (function () {
     function showTooltip(event) {
         var target = event.currentTarget;
         var renderer = F$(target.tooltipRenderer);
@@ -526,7 +526,7 @@ Object.defineProperty(HTMLElement.prototype, "explicitHeight", {
         target.off('mouseout', hideTooltip);
     }
 
-    Object.defineProperty(HTMLElement.prototype, "tooltipData", {
+    return {
         set: function (data) {
             if (data == null) {
                 if (this._tooltipData != null) {
@@ -541,8 +541,8 @@ Object.defineProperty(HTMLElement.prototype, "explicitHeight", {
         get: function () {
             return this._tooltipData;
         }
-    });
-})();
+    };
+})());
 
 Object.defineProperty(HTMLElement.prototype, "tooltipRenderer", {
     set: function (renderer) {
@@ -627,7 +627,7 @@ FunUI.utils.extend = function () {
             if (propertyDescriptor.get || propertyDescriptor.set) {
                 var originPropertyDescriptor = Object.getOwnPropertyDescriptor(target, key);
                 if (!originPropertyDescriptor) {
-                    Object.defineProperty(tar, key, propertyDescriptor);
+                    Object.defineProperty(target, key, propertyDescriptor);
                 } else {
                     originPropertyDescriptor.set = propertyDescriptor.set;
                     originPropertyDescriptor.get = propertyDescriptor.get;
@@ -1252,82 +1252,109 @@ FunUI.components.Button = {
     }
 };
 
+/**
+ * @mixin
+ */
+FunUI.components.Selectable = {
+    _selected: false,
+    select: function () {
+        this.selected  = true;
+    },
+    deselect: function () {
+        this.selected = false;
+    },
+    set selected(selected) {
+        if (this._selected == selected) {
+            return;
+        }
+
+        if (selected) {
+            this.addClass("selected");
+        } else {
+            this.removeClass("selected");
+        }
+
+        this._selected = selected;
+        this.fire(new CustomEvent(FunUI.events.SELECTED_CHANGED));
+    },
+    get selected (){
+        return this._selected;
+    }
+};
 
 /**
  * @mixin
  */
-FunUI.components.TextInput = (function () {
-    return {
-        multiline: false,
-        password: false,
-        placeholder: "",
-        _lastText: "",
-        _maxLength : -1,
-        __init__: function () {
-            var node, walk = document.createTreeWalker(this, NodeFilter.SHOW_TEXT, null, false);
-            var defaultValue = "";
-            if (node = walk.nextNode()) {
-                defaultValue = node.nodeValue.trim();
-                this.removeChild(node);
-            }
+FunUI.components.TextInput = {
+    multiline: false,
+    password: false,
+    placeholder: "",
+    _lastText: "",
+    _maxLength : -1,
+    __init__: function () {
+        var node, walk = document.createTreeWalker(this, NodeFilter.SHOW_TEXT, null, false);
+        var defaultValue = "";
+        if (node = walk.nextNode()) {
+            defaultValue = node.nodeValue.trim();
+            this.removeChild(node);
+        }
 
-            var input = null;
-            if (!this.multiline) {
-                input = document.createElement("input");
-                input.setAttribute("type", this.password ? "password" : "text");
-            } else {
-                input = document.createElement("textarea");
-            }
+        var input = null;
+        if (!this.multiline) {
+            input = document.createElement("input");
+            input.setAttribute("type", this.password ? "password" : "text");
+        } else {
+            input = document.createElement("textarea");
+        }
 
-            input.setAttribute("placeholder", this.placeholder);
-            input.on("input", this.fire.bind(this, new CustomEvent(FunUI.events.TEXT_CHANGED)));
+        input.setAttribute("placeholder", this.placeholder);
+        input.on("input", this.fire.bind(this, new CustomEvent(FunUI.events.TEXT_CHANGED)));
 
-            if (this._maxLength >= 0) {
-                input.setAttribute("maxlength", this._maxLength);
-            }
+        if (this._maxLength >= 0) {
+            input.setAttribute("maxlength", this._maxLength);
+        }
 
-            input.on('keydown', this.onKeyDown);
+        input.on('keydown', this.onKeyDown);
 
-            this.appendChild(input);
-            this.input = input;
-            this.text = defaultValue;
-        },
-        onKeyDown : function(event) {
-            if (event.key == "Enter") {
-                this.fire(new CustomEvent(FunUI.events.INPUT_SUBMIT));
-            }
-        },
-        set maxLength(value) {
-            value = parseInt(value);
-            if (this.input) {
-                this.input.setAttribute("maxlength", value);
-            } else {
-                this._maxLength = value;
-            }
-        },
-        get maxLength() {
-            if (this.input) {
-                return parseInt(this.input.getAttribute('maxLength'));
-            } else {
-                return this._maxLength;
-            }
-        },
-        set text(value) {
-            if (this.input.tagName.toLowerCase() == "input") {
-                if (this.input.value != value) {
-                    this.input.value = value;
-                    this.fire(new CustomEvent(FunUI.events.TEXT_CHANGED));
-                }
-            } else if (this.input.innerHTML != value) {
-                this.input.innerHTML = value;
+        this.appendChild(input);
+        this.input = input;
+        this.text = defaultValue;
+    },
+    onKeyDown : function(event) {
+        if (event.key == "Enter") {
+            this.fire(new CustomEvent(FunUI.events.INPUT_SUBMIT));
+        }
+    },
+    set maxLength(value) {
+        value = parseInt(value);
+        if (this.input) {
+            this.input.setAttribute("maxlength", value);
+        } else {
+            this._maxLength = value;
+        }
+    },
+    get maxLength() {
+        if (this.input) {
+            return parseInt(this.input.getAttribute('maxlength'));
+        } else {
+            return this._maxLength;
+        }
+    },
+    set text(value) {
+        if (this.input.tagName.toLowerCase() == "input") {
+            if (this.input.value != value) {
+                this.input.value = value;
                 this.fire(new CustomEvent(FunUI.events.TEXT_CHANGED));
             }
-        },
-        get text() {
-            return this.input.value;
+        } else if (this.input.innerHTML != value) {
+            this.input.innerHTML = value;
+            this.fire(new CustomEvent(FunUI.events.TEXT_CHANGED));
         }
-    };
-}());
+    },
+    get text() {
+        return this.input.value;
+    }
+};
 
 /**
  * @mixin
@@ -1377,10 +1404,10 @@ FunUI.components.ViewStack = {
     },
     _subViews: null,
     _selectedIndex: -1,
-    getSelectedIndex: function () {
+    get selectedIndex() {
         return this._selectedIndex;
     },
-    getCurrentSubView: function () {
+    get currentSubView() {
         if (this._selectedIndex >= 0 && this._selectedIndex < this._subViews.length) {
             return this._subViews[this._selectedIndex];
         }
@@ -1396,7 +1423,7 @@ FunUI.components.ViewStack = {
         if (beforeIndex == index) {
             return;
         }
-        var currentView = this.getCurrentSubView();
+        var currentView = this.currentSubView;
         if (currentView) {
             currentView.removeClass("selected");
         }
@@ -1415,39 +1442,57 @@ FunUI.components.ViewStack = {
  */
 FunUI.components.TabPage = {
     __init__: function () {
-        this.rerender();
+        this.initPages();
+        this.invalidate();
     },
-    rerender : function() {
-        var pages = this.getSubComponents("page");
+    initPages : function() {
+        this._pages = this.getSubComponents("F-TabSubPage");
+        for(var i = 0; i < this._pages.length; i ++) {
+            var page = this._pages[i];
+
+            page.on(FunUI.events.SELECTED_CHANGED, this._onPageSelectedChanged)
+        }
+
+        this._excludedPages = {};
+    },
+    excludePage : function(pageIndex) {
+        if (pageIndex >= 0 && pageIndex < this._pages.length && !this._excludedPages[pageIndex]) {
+            this._excludedPages[pageIndex] = true;
+            this.invalidate();
+        }
+    },
+    includePage : function(pageIndex) {
+        if (pageIndex >= 0 && pageIndex < this._pages.length && !!this._excludedPages[pageIndex]) {
+            delete this._excludedPages[pageIndex];
+            this.invalidate();
+        }
+    },
+    commitProperties : function() {
+        for(var index in this._excludedPages) {
+            this.removeChild(this._pages[index]);
+        }
+
+        var pages = this._pages;
         var pageTitles = [];
         var pageContents = [];
-        var selectedIndex = -1;
         var pageContent;
 
         var maxHeight = 0, maxWidth = 0, maxContentWidth = 0, maxContentHeight = 0, pageBarWidth = 0;
         for (var i = 0, length = pages.length; i < length; i++) {
+            if (!!this._excludedPages[i]) {
+                continue;
+            }
+
             var page = pages[i];
             page.pageIndex = i;
 
-            if (page.hasClass("active") && selectedIndex < 0) {
-                selectedIndex = i;
-            }
-
-            var pageTitle = page.getSubComponent('title');
+            var pageTitle = page.title;
             if (pageTitle) {
-
-                if (!pageTitle.tabTitleInited) {
-                    FunUI.utils.attachSound(pageTitle);
-                    pageTitle.presentLabelChild();
-                    pageTitle.presentSubComponent("hover");
-                    pageTitle.on("click", this._pageTitleClickHandler);
-                    pageTitle.tabTitleInited = true;
-                }
                 pageTitles.push(pageTitle);
                 pageBarWidth = pageBarWidth + pageTitle.offsetWidth;
             }
 
-            pageContent = page.getSubComponent('content');
+            pageContent = page.content;
 
             maxContentHeight = Math.max(pageContent.offsetHeight, maxContentHeight);
             maxContentWidth = Math.max(pageContent.offsetWidth, maxContentWidth);
@@ -1481,11 +1526,8 @@ FunUI.components.TabPage = {
             pageBarOffsetLeft += pageTitles[i].offsetWidth;
         }
 
-        this._pages = pages;
-        if (selectedIndex < 0) {
-            this.selectPage(0);
-        } else {
-            this.selectPage(selectedIndex);
+        if (this.selectedIndex < 0 || this._excludedPages[this.selectedIndex]) {
+            this.selectedIndex = 0;
         }
     },
 
@@ -1506,40 +1548,75 @@ FunUI.components.TabPage = {
      * @readonly
      * @type {int}
      */
-    selectedIndex: -1,
-    /**
-     *
-     * @param {int} index
-     */
-    selectPage: function (index) {
-        if (this.selectedIndex == index) {
+    _selectedIndex: -1,
+    set selectedIndex(index) {
+        if (this._excludedPages[index]) {
             return;
         }
 
-        var beforeIndex = this.selectedIndex;
-        if (beforeIndex != -1 && this._pages[this.selectedIndex]) {
-            this._pages[this.selectedIndex].removeClass("selected");
+        var pages = this._pages;
+        if (index < 0 || pages.length <= index) {
+            index = -1;
         }
 
-        if (index != -1) {
-            this._pages[index].addClass("selected");
-            this._pages[index].style.zIndex = ++this._zIndexSeq;
+        if (this._selectedIndex == index) {
+            return;
         }
 
-        this.selectedIndex = index;
-        this.fire(new CustomEvent(FunUI.events.SELECTED_CHANGED, {
-            beforeIndex: beforeIndex,
-            currentIndex: index
-        }));
+        if (this._selectedIndex != -1) {
+            pages[this._selectedIndex].selected = false;
+        }
+
+        if (index >= 0) {
+            pages[index].selected = true;
+            pages[index].style.zIndex = ++this._zIndexSeq;
+        }
+
+        this._selectedIndex = index;
+        this.fire(new CustomEvent(FunUI.events.SELECTED_CHANGED));
     },
-    _pageTitleClickHandler: function (event) {
-        var pageTitle = event.currentTarget;
-        this.selectPage(this._pages.indexOf(pageTitle.parentNode));
+    get selectedIndex() {
+        return this._selectedIndex;
     },
+    _onPageSelectedChanged : function(event) {
+        var page = event.currentTarget;
+        if (!page.selected) {
+            return;
+        }
+
+        this.selectedIndex = this._pages.indexOf(page);
+    },
+    _excludedPages : null,
     _pages: null,
     _zIndexSeq: 0
 };
 
+FunUI.components.TabSubPage = FunUI.utils.extend(
+    FunUI.components.Selectable,
+    {
+        _title : null,
+        _content : null,
+        __init__ : function() {
+            this._title = this.getSubComponent('title');
+            this._content = this.getSubComponent('content');
+
+            FunUI.utils.attachSound(this);
+            this._title.presentLabelChild();
+            this._title.presentSubComponent("hover");
+            this._title.on("click", this.select);
+
+            if (this.hasClass("selected")) {
+                this.selected = true;
+            }
+        },
+        get title() {
+            return this._title;
+        },
+        get content() {
+            return this._content;
+        }
+    }
+);
 /**
  * @mixin
  */
@@ -1754,17 +1831,17 @@ FunUI.components.List = {
      *
      * @return {boolean}
      */
-    isAllSelected: function () {
+    get allSelected() {
         return this._allSelected;
     },
     /**
      *
      * @return {Array.<int>}
      */
-    getSelectedIndices: function () {
+    get selectedIndices() {
         return this._selectedIndices;
     },
-    getSelectedIndex: function () {
+    get selectedIndex() {
         return this._selectedIndices && this._selectedIndices.length > 0 ? this._selectedIndices[0] : -1;
     },
     isIndexSelected: function (index) {
@@ -1774,7 +1851,7 @@ FunUI.components.List = {
      *
      * @return {Array}
      */
-    getSelectedData: function () {
+    get selectedData() {
         if (!this._arrayView) {
             return null;
         }
@@ -1786,8 +1863,8 @@ FunUI.components.List = {
 
         return ret;
     },
-    getSelectedDatum: function () {
-        var index = this.getSelectedIndex();
+    get selectedDatum() {
+        var index = this.selectedIndex;
         if (index < 0) {
             return null;
         }
@@ -1815,35 +1892,6 @@ FunUI.components.List = {
     _itemProto: null
 };
 
-/**
- * @mixin
- */
-FunUI.components.Selectable = {
-    _selected: false,
-    select: function () {
-        this.setSelected(true);
-    },
-    deselect: function () {
-        this.setSelected(false);
-    },
-    setSelected: function (selected) {
-        if (this._selected == selected) {
-            return;
-        }
-
-        if (selected) {
-            this.addClass("selected");
-        } else {
-            this.removeClass("selected");
-        }
-
-        this._selected = selected;
-        this.fire(new CustomEvent(FunUI.events.SELECTED_CHANGED));
-    },
-    isSelected: function () {
-        return this._selected;
-    }
-};
 
 /**
  * @mixin
@@ -1875,12 +1923,12 @@ FunUI.components.CheckBox = FunUI.utils.extend(
         __init__: function () {
             FunUI.utils.attachSound(this);
             this.presentSubComponent("hover");
-            this.setSelected(this.hasClass("selected"));
+            this.selected = this.hasClass("selected");
             this.on("click", this.toggle);
         },
         toggle: function () {
             var stat = !this._selected;
-            this.setSelected(stat);
+            this.selected = stat;
             return stat;
         }
     });
@@ -1917,7 +1965,7 @@ FunUI.components.RadioGroup = {
 
             button.on(FunUI.events.SELECTED_CHANGED, this.selectIndex.bind(this, i));
 
-            if (button.isSelected()) {
+            if (button.selected) {
                 this.selectIndex(i);
             }
         }
@@ -1928,17 +1976,17 @@ FunUI.components.RadioGroup = {
         }
 
         if (this._selectedIndex != -1) {
-            this._buttons[this._selectedIndex].setSelected(false);
+            this._buttons[this._selectedIndex].selected = false;
         }
 
         if (index) {
-            this._buttons[index].setSelected(true);
+            this._buttons[index].selected = true;
         }
 
         this._selectedIndex = index;
         this.fire(new CustomEvent(FunUI.events.SELECTED_CHANGED));
     },
-    getSelectedIndex: function () {
+    get selectedIndex() {
         return this._selectedIndex;
     }
 };
@@ -1974,7 +2022,7 @@ FunUI.components.SelectAllCtrl = {
         this._list = list;
         this.render();
     },
-    getList: function () {
+    get list() {
         return this._list;
     },
     toggle: function () {
@@ -1982,7 +2030,7 @@ FunUI.components.SelectAllCtrl = {
             return false;
         }
 
-        if (this._list.isAllSelected()) {
+        if (this._list.allSelected) {
             this._list.deselectAll();
             return false;
         }
@@ -1991,7 +2039,7 @@ FunUI.components.SelectAllCtrl = {
         return true;
     },
     render: function () {
-        if (this._list.isAllSelected()) {
+        if (this._list.allSelected) {
             this.addClass("selected")
         } else {
             this.removeClass("selected");
@@ -2128,7 +2176,7 @@ FunUI.components.DropDownList = {
 
         var self = this;
         this.list.on(FunUI.events.SELECTED_CHANGED, function (event) {
-            self.renderLabel(self._label, self.getSelectedItem());
+            self.renderLabel(self._label, self.selectedItem);
         });
 
         this.deactivate();
@@ -2164,8 +2212,8 @@ FunUI.components.DropDownList = {
     selectItem: function (index) {
         this.list.selectItem(index);
     },
-    getSelectedItem: function () {
-        return this.list.getSelectedDatum();
+    get selectedItem() {
+        return this.list.selectedDatum;
     },
     positionList: function (list) {
         var clientRect = this.getBoundingClientRect();
