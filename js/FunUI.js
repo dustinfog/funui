@@ -11,6 +11,19 @@ Object.defineProperty(String.prototype, "literal", {
     }
 });
 
+if (typeof Object.values != "function") {
+    Object.values = function(obj) {
+        var values = [];
+        for (var key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                values.push(obj[key]);
+            }
+        }
+
+        return values;
+    }
+}
+
 /**
  @param {string} type
  @param {EventListener|Function} listener
@@ -263,7 +276,6 @@ HTMLElement.prototype.presentLabelChild = function (force) {
             }
         }
 
-
         if (contentNode != null || force) {
             label = document.createElement('span');
             label.className = 'label';
@@ -273,7 +285,6 @@ HTMLElement.prototype.presentLabelChild = function (force) {
             } else {
                 this.appendChild(label);
             }
-
         }
     }
 
@@ -364,6 +375,10 @@ HTMLElement.prototype.initFunUI = (function () {
                 dataSet[propName] = value.literal;
             }
         }
+
+        if (!!this.id) {
+            FunUI.views[this.id] = this;
+        }
         // mix in
         var initializers = mixInStart(this, componentTrait, extraTraits, customizedTrait, dataSet);
 
@@ -389,6 +404,10 @@ HTMLElement.prototype.initFunUI = (function () {
         var init = "__init__";
         var initializers = [];
 
+        if (!Array.isArray(element._validators)) {
+            element._validators = [];
+        }
+
         for (var i = 0, length = traits.length; i < length; i++) {
             var trait = traits[i];
 
@@ -399,6 +418,11 @@ HTMLElement.prototype.initFunUI = (function () {
 
                 if (prop == init) {
                     initializers.push(trait[prop]);
+                    continue;
+                }
+
+                if (prop == "commitProperties") {
+                    element._validators.push(trait[prop]);
                     continue;
                 }
 
@@ -414,11 +438,21 @@ HTMLElement.prototype.initFunUI = (function () {
                 } else {
                     var value = trait[prop];
 
-                    if (typeof value == "function") {
+                    var nameRef = new FunUI.utils.Reference();
+                    var annotations = FunUI.utils.parseAnnotations(prop, nameRef);
+
+                    if (annotations) {
+                        for(var i = 0; i < annotations.length; i ++) {
+                            value = annotations[i].apply(element, value) || value;
+                        }
+                    } else if (typeof value == "function") {
                         value = value.bind(element);
                     }
 
-                    element[prop] = value;
+                    var name = nameRef.get();
+                    if (name && name.length > 0) {
+                        element[name] = value;
+                    }
                 }
             }
         }
@@ -481,7 +515,11 @@ HTMLElement.prototype.invalidate = function () {
         if (!this.hasOwnProperty("validate")) {
             this.validate = this.validate.bind(this);
         }
-        this._invalid = setTimeout(this.validate, 0);
+        if (this.funUIInitialized) {
+            this._invalid = setTimeout(this.validate, 0);
+        } else {
+            this.delayCall(this.validate);
+        }
     }
 };
 
@@ -489,12 +527,17 @@ HTMLElement.prototype.invalidate = function () {
  * @abstract
  */
 HTMLElement.prototype.validate = function () {
-    if (typeof this.commitProperties == 'function') {
-        this.commitProperties();
+    if (Array.isArray(this._validators)) {
+        var that = this;
+        this._validators.forEach(function(callback) {
+            callback.call(that);
+        });
     }
 
-    clearTimeout(this._invalid);
-    this._invalid = null;
+    if (this._invalid) {
+        clearTimeout(this._invalid);
+        this._invalid = null;
+    }
 };
 
 Object.defineProperty(HTMLElement.prototype, "explicitWith", {
@@ -554,27 +597,37 @@ Object.defineProperty(HTMLElement.prototype, "tooltipRenderer", {
 });
 
 
-Object.defineProperty(HTMLElement.prototype, "disabled", {
-    set: function (value) {
-        if (this.disabled == value) {
-            return;
-        }
-
-        if (value) {
-            this.addClass('disabled');
-        } else {
-            this.removeClass('disabled');
-        }
-
-        this._disabled = value;
-    },
-    get: function () {
-        if (typeof this._disabled == 'undefined') {
-            this._disabled = this.hasClass('disabled');
-        }
-        return this._disabled;
+Object.defineProperty(HTMLElement.prototype, "disabled", (function() {
+    function stopEvent(event) {
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        event.preventDefault();
     }
-});
+
+    return {
+        set: function (value) {
+            if (this._disabled === value) {
+                return;
+            }
+
+            if (value) {
+                this.addClass('disabled');
+                this.on('click', stopEvent, true);
+            } else {
+                this.removeClass('disabled');
+                this.off('click', stopEvent, true);
+            }
+
+            this._disabled = value;
+        },
+        get: function () {
+            if (typeof this._disabled == 'undefined') {
+                this.disabled = this.hasClass('disabled');
+            }
+            return this._disabled;
+        }
+    };
+})());
 
 
 var FunUI = {};
@@ -641,6 +694,77 @@ FunUI.utils.extend = function () {
     return target;
 };
 
+FunUI.utils.parseAnnotations = function() {
+    /**
+     * @param {Element} node
+     */
+    function nodeToAnnotation(node) {
+        var name = node.tagName;
+        if (name == "parsererror") {
+            throw new Error(node.querySelector("div").innerHTML);
+        }
+
+        var definition = FunUI.annotations[name];
+        if (!definition) {
+            throw new Error("Can't find annotation definition FunUI.annotations." + name);
+        }
+
+        var annotation = Object.create(definition);
+
+        var attributes = node.attributes;
+        for(var i = 0, length = attributes.length; i < length; i ++) {
+            var attribute = attributes[i];
+            annotation[attribute.name] = attribute.value.literal;
+        }
+
+        var children = node.children;
+        annotation.children = [];
+        for(i = 0, length = children.length; i < length; i ++) {
+            var child = child[i];
+            annotation.children.push(nodeToAnnotation(child));
+        }
+
+        return annotation;
+    }
+
+    /**
+     *
+     * @param {string} key
+     * @param {FunUI.utils.Reference} nameRef
+     */
+    return function(key, nameRef) {
+        key = key.trim();
+        if (key.indexOf("<") != 0) {
+            if (nameRef instanceof FunUI.utils.Reference) {
+                nameRef.set(key);
+            }
+            return null;
+        }
+
+        var term =  key.lastIndexOf(">");
+        if (term < 0) {
+            throw new Error("invalidate annotation format");
+        }
+
+        if (nameRef instanceof FunUI.utils.Reference) {
+            nameRef.set(key.substr(term + 1).trim());
+        }
+
+        var text = key.substr(0, term + 1);
+        text = "<Annotations>" + text + "</Annotations>";
+
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(text, "application/xml");
+        var nodes = doc.documentElement.children;
+        var annotations = [];
+        for(var i = 0; i < nodes.length; i ++) {
+            annotations.push(nodeToAnnotation(nodes[i]));
+        }
+
+        return annotations;
+    };
+}();
+
 FunUI.utils.relay = document.createElement("div");
 
 (function () {
@@ -658,7 +782,7 @@ FunUI.utils.relay = document.createElement("div");
 
             return str;
         },
-        getEmbeddedText: function (key) {
+        getEmbeddedText: function (key, params) {
             if (this._embeddedLanguages == null) {
                 this._embeddedLanguages = {};
                 var langElements = document.getElementsByClassName('F-Lang');
@@ -673,7 +797,13 @@ FunUI.utils.relay = document.createElement("div");
                 }
             }
 
-            return this._embeddedLanguages[this._language][key] || "";
+            var text = this._embeddedLanguages[this._language][key] || "";
+            if (params) {
+                text = text.replace(/\[\[([^\]]+)]]/g, function(pattern, key) {
+                    return params[key];
+                });
+            }
+            return text;
         }
     };
 
@@ -696,6 +826,10 @@ FunUI.utils.getView = function (viewId) {
         viewId = view.id;
     }
 
+    if (viewId instanceof String) {
+        viewId = viewId.toString();
+    }
+
     if (typeof viewId != "string") {
         throw new Error('invalid arguments');
     }
@@ -708,29 +842,26 @@ FunUI.utils.getView = function (viewId) {
 
     if (!view) {
         var layout = FunUI.layouts[viewId];
-        if (!layout) {
-            throw new Error("invalid view id " + viewId);
-        }
-        layout = FunUI.lang.apply(layout);
-        FunUI.utils.relay.innerHTML = layout;
-        view = FunUI.utils.relay.firstElementChild;
-        if (!view) {
-            throw new Error("invalid view, please check if view's Id and filename are identical");
-        }
+        if (layout) {
+            layout = FunUI.lang.apply(layout);
+            FunUI.utils.relay.innerHTML = layout;
+            view = FunUI.utils.relay.firstElementChild;
+            if (!view) {
+                throw new Error("invalid view, please check if view's Id and filename are identical");
+            }
 
-        FunUI.utils.relay.removeChild(view);
-        delete FunUI.layouts[viewId];
+            FunUI.utils.relay.removeChild(view);
+            delete FunUI.layouts[viewId];
 
-        view.initFunUI();
+            view.initFunUI();
+        } else {
+            return FunUI.traits[viewId];
+        }
     } else if (view.initFunUI() && FunUI.lang.isEnabled()) {
         var node, walk = document.createTreeWalker(view, NodeFilter.SHOW_TEXT, null, false);
         while (node = walk.nextNode()) {
             node.nodeValue = FunUI.lang.apply(node.nodeValue);
         }
-    }
-
-    if (viewId) {
-        FunUI.views[viewId] = view;
     }
 
     return view;
@@ -1245,10 +1376,23 @@ FunUI.components = {};
  * @mixin
  */
 FunUI.components.Button = {
+    _label : null,
+    _labelField : null,
     __init__: function () {
         FunUI.utils.attachSound(this);
-        this.presentLabelChild();
+        this._labelField = this.presentLabelChild(true);
+        this._label = this._labelField.innerHTML;
         this.presentSubComponent("hover");
+    },
+    set label(v) {
+        this._label = v;
+        this.invalidate();
+    },
+    get label() {
+        return this._label;
+    },
+    commitProperties : function() {
+        this._labelField.innerHTML = this._label;
     }
 };
 
@@ -1362,19 +1506,29 @@ FunUI.components.TextInput = {
 FunUI.components.Window = {
     drawingBg: true,
     modal: false,
+    _title : null,
+    _titleField : null,
     __init__: function () {
         if (this.drawingBg) {
             this.presentSubComponent("bg");
         }
 
-        var titleElement = this.getSubComponent('title');
-        if (!!titleElement) {
-            titleElement.presentLabelChild();
-        }
-
+        this._titleField = this.getSubComponent('title');
         var closeButton = this.getSubComponent("close");
         if (closeButton) {
             closeButton.on("click", this.close);
+        }
+    },
+    set title(v) {
+        this._title = v;
+        this.invalidate();
+    },
+    get title() {
+        return this._title;
+    },
+    commitProperties : function() {
+        if (this._titleField) {
+            this._titleField.innerHTML = this._title;
         }
     },
     open: function () {
@@ -1441,50 +1595,61 @@ FunUI.components.ViewStack = {
  * @mixin
  */
 FunUI.components.TabPage = {
+    _pagesChanged : false,
     __init__: function () {
-        this.initPages();
-        this.invalidate();
-    },
-    initPages : function() {
         this._pages = this.getSubComponents("F-TabSubPage");
         for(var i = 0; i < this._pages.length; i ++) {
             var page = this._pages[i];
+            page.pageIndex = i;
 
             page.on(FunUI.events.SELECTED_CHANGED, this._onPageSelectedChanged)
         }
 
         this._excludedPages = {};
+        this._pagesChanged = true;
+        this.invalidate();
     },
     excludePage : function(pageIndex) {
         if (pageIndex >= 0 && pageIndex < this._pages.length && !this._excludedPages[pageIndex]) {
             this._excludedPages[pageIndex] = true;
+            this._pagesChanged = true;
             this.invalidate();
         }
     },
     includePage : function(pageIndex) {
         if (pageIndex >= 0 && pageIndex < this._pages.length && !!this._excludedPages[pageIndex]) {
             delete this._excludedPages[pageIndex];
+            this._pagesChanged = true;
             this.invalidate();
         }
     },
     commitProperties : function() {
-        for(var index in this._excludedPages) {
-            this.removeChild(this._pages[index]);
+        if (!this._pagesChanged) {
+            return;
         }
-
         var pages = this._pages;
         var pageTitles = [];
         var pageContents = [];
         var pageContent;
 
         var maxHeight = 0, maxWidth = 0, maxContentWidth = 0, maxContentHeight = 0, pageBarWidth = 0;
+        var lastPage = null;
         for (var i = 0, length = pages.length; i < length; i++) {
+            var page = pages[i];
             if (!!this._excludedPages[i]) {
+                if (page.parentNode == this) {
+                    this.removeChild(page);
+                }
                 continue;
             }
 
-            var page = pages[i];
-            page.pageIndex = i;
+            if (page.parentNode != this) {
+                if (lastPage == null) {
+                    this.appendChild(page);
+                } else {
+                    this.insertBefore(page, lastPage)
+                }
+            }
 
             var pageTitle = page.title;
             if (pageTitle) {
@@ -1499,6 +1664,8 @@ FunUI.components.TabPage = {
             maxHeight = Math.max(maxHeight, page.offsetTop + pageContent.offsetTop + maxContentHeight);
             maxWidth = Math.max(maxWidth, page.offsetLeft + pageContent.offsetLeft + maxContentWidth);
             pageContents.push(pageContent);
+
+            lastPage = page;
         }
 
         this.explicitWith = maxWidth;
@@ -1529,21 +1696,32 @@ FunUI.components.TabPage = {
         if (this.selectedIndex < 0 || this._excludedPages[this.selectedIndex]) {
             this.selectedIndex = 0;
         }
+
+        this._pagesChanged = false;
     },
 
     /**
      * @type {string} center|left|right
      */
-    barAlign: "center",
+    _barAlign: "center",
     /**
      * @type {int}
      */
-    barOffsetLeft: 0,
-    /**
-     * @readonly
-     * @type {int}
-     */
-    pageNum: 0,
+    _barOffsetLeft: 0,
+    set barAlign(align) {
+        this._barAlign = align;
+        this.invalidate();
+    },
+    get barAlign() {
+        return this._barAlign;
+    },
+    set barOffsetLeft(value) {
+        this._barOffsetLeft = value;
+        this.invalidate();
+    },
+    get barOffsetLeft() {
+        return this._barOffsetLeft;
+    },
     /**
      * @readonly
      * @type {int}
@@ -1632,10 +1810,17 @@ FunUI.components.Tooltip = {
             this, false, FunUI.managers.PopUpManager.LAYER_PERIPHERY
         );
 
+        document.on('click', this.tryHide, true);
         this.delayCall(this._show);
     },
     hide: function () {
+        document.off('click', this.tryHide, true);
         FunUI.managers.PopUpManager.removePopUp(this);
+    },
+    tryHide : function(event) {
+        if (event.target != this._host && !this._host.contains(event.target)) {
+            this.hide();
+        }
     },
     /**
      * @abstract
@@ -1688,7 +1873,7 @@ FunUI.components.List = {
      * @param {FunUI.utils.ArrayView} dataProvider
      */
     set dataProvider(dataProvider) {
-        if (!(dataProvider instanceof FunUI.utils.ArrayView)) {
+        if (dataProvider != null && !(dataProvider instanceof FunUI.utils.ArrayView)) {
             throw new Error('F$ArrayView required');
         }
 
@@ -1708,7 +1893,7 @@ FunUI.components.List = {
                 this.invalidate();
             }
 
-            if (!dataProvider.isDirty) {
+            if (!dataProvider || !dataProvider.isDirty) {
                 this.render();
             }
         }
@@ -1721,6 +1906,10 @@ FunUI.components.List = {
         return this._arrayView;
     },
     render: function () {
+        this.delayCall(this.doRender);
+    },
+    doRender : function() {
+
         var data;
         if (!this._arrayView) {
             data = [];
@@ -1744,6 +1933,7 @@ FunUI.components.List = {
                 item.list = this;
                 this.appendChild(item);
                 items.push(item);
+
             }
 
             if (this.isIndexSelected(i)) {
@@ -2225,6 +2415,28 @@ FunUI.components.DropDownList = {
     }
 };
 
+FunUI.components.ProgressBar = {
+    _indicators : null,
+    _base : null,
+    _progresses : null,
+    __init__ : function() {
+        this._indicators = this.querySelectorAll('.indicator');
+    },
+    setProgresses : function () {
+        this._base = arguments[0];
+        this._progresses = Array.prototype.slice.call(arguments, 1);
+        this.invalidate();
+    },
+    getProgress : function (index) {
+        return Math.floor(this._progresses[index] * 100 / this._base) / 100;
+    },
+    commitProperties : function() {
+        for (var i= 0; i < this._indicators.length; i ++) {
+            this._indicators[i].style.width = Math.floor(this._progresses[i] * 100 / this._base) + "%";
+        }
+    }
+};
+
 FunUI.components.Prompt = {
     _titleElement: null,
     _contentElement: null,
@@ -2296,6 +2508,41 @@ FunUI.components.Prompt = {
     }
 };
 
+FunUI.annotations = {};
+
+FunUI.annotations.Observer = {
+    selector: null,
+    event : null,
+    useCapture : false,
+    apply : function(obj, value) {
+        if (typeof value != "function") {
+            throw new Error("invalid listener");
+        }
+
+        value = value.bind(obj);
+        if (!this.selector) {
+            obj.on(this.event, value, this.useCapture);
+        } else {
+            var elements = obj.querySelectorAll(this.selector);
+            for(var i = 0; i < elements.length; i ++)
+            {
+                elements[i].on(this.event, value, this.useCapture);
+            }
+        }
+
+        return value;
+    }
+};
+
+FunUI.annotations.Delay = {
+    apply : function(obj, value) {
+        if (typeof value != "function") {
+            throw new Error("invalid function");
+        }
+
+        return obj.delayCall.bind(obj, value, obj);
+    }
+};
 
 FunUI.layouts = {};
 FunUI.traits = {};
