@@ -11,8 +11,18 @@ Object.defineProperty(String.prototype, "literal", {
     }
 });
 
+if (!Math.sign) {
+    Math.sign = function(x) {
+        x = +x;
+        if (x === 0 || isNaN(x)) {
+            return Number(x);
+        }
+        return x > 0 ? 1 : -1;
+    };
+}
+
 if (typeof Object.values != "function") {
-    Object.values = function(obj) {
+    Object.values = function (obj) {
         var values = [];
         for (var key in obj) {
             if (obj.hasOwnProperty(key)) {
@@ -25,50 +35,138 @@ if (typeof Object.values != "function") {
 }
 
 /**
- @param {string} type
- @param {EventListener|Function} listener
- @param {boolean} [useCapture = false]
+ * hack for Object.assign
  */
-EventTarget.prototype.on = EventTarget.prototype.addEventListener;
+if (!Object.assign) {
+    Object.defineProperty(Object, 'assign', {
+        enumerable: false,
+        configurable: true,
+        writable: true,
+        value: function(target) {
+            'use strict';
+            if (target === undefined || target === null) {
+                throw new TypeError('Cannot convert first argument to object');
+            }
 
-/**
- @param {string} type
- @param {EventListener|Function} listener
- @param {boolean} [useCapture = false]
- */
-EventTarget.prototype.off = EventTarget.prototype.removeEventListener;
-/**
- @param {Event} event
- @return {boolean}
- */
-EventTarget.prototype.fire = EventTarget.prototype.dispatchEvent;
+            var to = Object(target);
+            for (var i = 1; i < arguments.length; i++) {
+                var nextSource = arguments[i];
+                if (nextSource === undefined || nextSource === null) {
+                    continue;
+                }
+                nextSource = Object(nextSource);
 
-/**
- * hack for querySelector and querySelectorAll to support :scope
- *
- * @link http://stackoverflow.com/questions/6481612/queryselector-search-immediate-children
- */
-(function (doc, proto) {
-    try {
-        doc.querySelector(':scope body');
-    } catch (err) {
-        ['querySelector', 'querySelectorAll'].forEach(function (method) {
-            var native = proto[method];
-            proto[method] = function (selectors) {
-                if (/(^|,)\s*:scope/.test(selectors)) {
-                    var id = this.id;
-                    this.id = id || ('ID' + Date.now());
-                    selectors = selectors.replace(/((^|,)\s*):scope/g, '$1#' + this.id);
-                    var result = doc[method](selectors);
-                    this.id = id;
-                    return result;
-                } else {
-                    return native.call(this, selectors);
+                var keysArray = Object.keys(Object(nextSource));
+                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {
+                    var nextKey = keysArray[nextIndex];
+                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);
+                    if (desc !== undefined && desc.enumerable) {
+                        to[nextKey] = nextSource[nextKey];
+                    }
                 }
             }
-        });
+            return to;
+        }
+
+    });
+}
+
+
+/**
+ * hack for Array.from
+ */
+if (!Array.from) {
+    Array.from = (function () {
+        var toStr = Object.prototype.toString;
+        var isCallable = function (fn) {
+            return typeof fn === 'function' || toStr.call(fn) === '[object Function]';
+        };
+        var toInteger = function (value) {
+            var number = Number(value);
+            if (isNaN(number)) { return 0; }
+            if (number === 0 || !isFinite(number)) { return number; }
+            return (number > 0 ? 1 : -1) * Math.floor(Math.abs(number));
+        };
+        var maxSafeInteger = Math.pow(2, 53) - 1;
+        var toLength = function (value) {
+            var len = toInteger(value);
+            return Math.min(Math.max(len, 0), maxSafeInteger);
+        };
+
+        // The length property of the from method is 1.
+        return function from(arrayLike/*, mapFn, thisArg */) {
+            // 1. Let C be the this value.
+            var C = this;
+
+            // 2. Let items be ToObject(arrayLike).
+            var items = Object(arrayLike);
+
+            // 3. ReturnIfAbrupt(items).
+            if (arrayLike == null) {
+                throw new TypeError("Array.from requires an array-like object - not null or undefined");
+            }
+
+            // 4. If mapfn is undefined, then let mapping be false.
+            var mapFn = arguments.length > 1 ? arguments[1] : void undefined;
+            var T;
+            if (typeof mapFn !== 'undefined') {
+                // 5. else
+                // 5. a If IsCallable(mapfn) is false, throw a TypeError exception.
+                if (!isCallable(mapFn)) {
+                    throw new TypeError('Array.from: when provided, the second argument must be a function');
+                }
+
+                // 5. b. If thisArg was supplied, let T be thisArg; else let T be undefined.
+                if (arguments.length > 2) {
+                    T = arguments[2];
+                }
+            }
+
+            // 10. Let lenValue be Get(items, "length").
+            // 11. Let len be ToLength(lenValue).
+            var len = toLength(items.length);
+
+            // 13. If IsConstructor(C) is true, then
+            // 13. a. Let A be the result of calling the [[Construct]] internal method of C with an argument list containing the single item len.
+            // 14. a. Else, Let A be ArrayCreate(len).
+            var A = isCallable(C) ? Object(new C(len)) : new Array(len);
+
+            // 16. Let k be 0.
+            var k = 0;
+            // 17. Repeat, while k < len… (also steps a - h)
+            var kValue;
+            while (k < len) {
+                kValue = items[k];
+                if (mapFn) {
+                    A[k] = typeof T === 'undefined' ? mapFn(kValue, k) : mapFn.call(T, kValue, k);
+                } else {
+                    A[k] = kValue;
+                }
+                k += 1;
+            }
+            // 18. Let putStatus be Put(A, "length", len, true).
+            A.length = len;
+            // 20. Return A.
+            return A;
+        };
+    }());
+}
+
+/**
+ * hack for CustomEvent
+ */
+(function () {
+    function CustomEvent ( event, params ) {
+        params = params || { bubbles: false, cancelable: false, detail: undefined };
+        var evt = document.createEvent( 'CustomEvent' );
+        evt.initCustomEvent( event, params.bubbles, params.cancelable, params.detail );
+        return evt;
     }
-})(window.document, HTMLElement.prototype);
+
+    CustomEvent.prototype = window.Event.prototype;
+
+    window.CustomEvent = CustomEvent;
+})();
 
 /**
  * hack for dataset
@@ -140,6 +238,27 @@ if (!document.documentElement.dataset &&
         Object.defineProperty(Element.prototype, 'dataset', propDescriptor);
     }
 }
+
+
+/**
+ @param {string} type
+ @param {EventListener|Function} listener
+ @param {boolean} [useCapture = false]
+ */
+HTMLElement.prototype.on = HTMLElement.prototype.addEventListener;
+
+/**
+ @param {string} type
+ @param {EventListener|Function} listener
+ @param {boolean} [useCapture = false]
+ */
+HTMLElement.prototype.off = HTMLElement.prototype.removeEventListener;
+/**
+ @param {Event} event
+ @return {boolean}
+ */
+HTMLElement.prototype.fire = HTMLElement.prototype.dispatchEvent;
+
 /**
  * @return {Array.<String>}
  */
@@ -202,18 +321,31 @@ HTMLElement.prototype.removeClass = function (className) {
  * @return {HTMLElement|null}
  */
 HTMLElement.prototype.getSubComponent = function (className) {
-    return this.querySelector(":scope>." + className);
+    var ret = this.getSubComponents(className, 1);
+    if (ret.length > 0) {
+        return ret[0];
+    }
+
+    return null;
 };
 /**
  *
  * @param {String} className
+ * @param {Number} limit
  * @return {Array.<HTMLElement>}
  */
-HTMLElement.prototype.getSubComponents = function (className) {
+HTMLElement.prototype.getSubComponents = function (className, limit) {
+    var list = this.getElementsByClassName(className);
     var ret = [];
-    var list = this.querySelectorAll(":scope>." + className);
     for (var i = 0, length = list.length; i < length; i++) {
-        ret.push(list.item(i));
+        var ele = list.item(i);
+        if (ele.parentNode == this) {
+            ret.push(ele);
+
+            if (limit <= list.length) {
+                break;
+            }
+        }
     }
     return ret;
 };
@@ -300,26 +432,44 @@ HTMLElement.prototype.delayCall = function (callback) {
         throw new Error('callback must be a function');
     }
 
-    if (!this.funUIInitialized) {
-        if (!this._delayedCalls) {
-            this._delayedCalls = [];
-        }
-
-
-        if (arguments.length >= 2) {
-            callback = Function.prototype.bind.apply(callback, Array.prototype.slice.call(arguments, 1));
-        }
-
-        this._delayedCalls.push(callback);
-    } else {
-        var thisObj = arguments.length >= 2 ? arguments[1] : null;
-        var args = Array.prototype.slice.call(arguments, 2);
-
-        callback.apply(thisObj, args);
+    if (!this._delayedCalls) {
+        this._delayedCalls = [];
     }
+
+
+    if (arguments.length >= 2) {
+        callback = Function.prototype.bind.apply(callback, Array.prototype.slice.call(arguments, 1));
+    }
+
+    this._delayedCalls.push(callback);
+    this.invalidate();
 };
 
 HTMLElement.prototype.initFunUI = (function () {
+    var mutationObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            var addedNodes = mutation.addedNodes;
+            for(var i = 0, length = addedNodes.length; i < length; i ++) {
+                var addedNode = addedNodes[i];
+
+                if (addedNode.nodeType != Node.ELEMENT_NODE) {
+                    continue;
+                }
+
+                var node, walk = document.createTreeWalker(addedNode, NodeFilter.SHOW_ELEMENT, null, false);
+                while (node = walk.nextNode()) {
+                    if (node._invalid === true) {
+                        node.invalidate();
+                    }
+                }
+            }
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", function() {
+        mutationObserver.observe(document.body, {childList: true, subtree: true});
+    });
+
     return function () {
         if (typeof this.funUIInitialized != "undefined") {
             return false;
@@ -379,24 +529,21 @@ HTMLElement.prototype.initFunUI = (function () {
         if (!!this.id) {
             FunUI.views[this.id] = this;
         }
-        // mix in
-        var initializers = mixInStart(this, componentTrait, extraTraits, customizedTrait, dataSet);
 
-        if (immediately) {
-            mixInFinish(this, initializers);
-        } else {
-            setTimeout(mixInFinish, 0, this, initializers);
-        }
-
+        mixin(this, componentTrait, extraTraits, customizedTrait, dataSet);
+        this.funUIInitialized = true;
+        var that = this;
+        this.delayCall(function () {
+            that.fire(new CustomEvent(FunUI.events.INITIALIZED));
+        });
         return true;
     };
 
     /**
      * @param {HTMLElement} element
      * @param {...} traits
-     * @return Array.<function>
      */
-    function mixInStart() {
+    function mixin() {
         var args = Array.from(arguments);
         var element = args.shift();
         var traits = flattenTraits(args);
@@ -442,7 +589,7 @@ HTMLElement.prototype.initFunUI = (function () {
                     var annotations = FunUI.utils.parseAnnotations(prop, nameRef);
 
                     if (annotations) {
-                        for(var i = 0; i < annotations.length; i ++) {
+                        for (var i = 0; i < annotations.length; i++) {
                             value = annotations[i].apply(element, value) || value;
                         }
                     } else if (typeof value == "function") {
@@ -456,21 +603,10 @@ HTMLElement.prototype.initFunUI = (function () {
                 }
             }
         }
-
-        return initializers;
-    }
-
-    function mixInFinish(element, initializers) {
         for (var i = 0, length = initializers.length; i < length; i++) {
             initializers[i].call(element);
         }
 
-        while (element._delayedCalls && element._delayedCalls.length) {
-            element._delayedCalls.shift().call(null);
-        }
-
-        element.funUIInitialized = true;
-        element.fire(new CustomEvent(FunUI.events.INITIALIZED));
     }
 
     function flattenTraits(traits) {
@@ -511,15 +647,18 @@ HTMLElement.prototype.getStylePixel = function (styleName) {
 };
 
 HTMLElement.prototype.invalidate = function () {
-    if (!this._invalid) {
-        if (!this.hasOwnProperty("validate")) {
-            this.validate = this.validate.bind(this);
-        }
-        if (this.funUIInitialized) {
-            this._invalid = setTimeout(this.validate, 0);
-        } else {
-            this.delayCall(this.validate);
-        }
+    if (typeof this._invalid == "number") {
+        return;
+    }
+
+    if (!this.hasOwnProperty("validate")) {
+        this.validate = this.validate.bind(this);
+    }
+
+    if (document.body.contains(this)) {
+        this._invalid = setTimeout(this.validate, 0);
+    } else {
+        this._invalid = true;
     }
 };
 
@@ -527,17 +666,26 @@ HTMLElement.prototype.invalidate = function () {
  * @abstract
  */
 HTMLElement.prototype.validate = function () {
+    if (!this._invalid) {
+        return;
+    }
+
     if (Array.isArray(this._validators)) {
         var that = this;
-        this._validators.forEach(function(callback) {
+        this._validators.forEach(function (callback) {
             callback.call(that);
         });
     }
 
-    if (this._invalid) {
-        clearTimeout(this._invalid);
-        this._invalid = null;
+    while (this._delayedCalls && this._delayedCalls.length) {
+        this._delayedCalls.shift().call(null);
     }
+
+    if (typeof this._invalid == "number") {
+        clearTimeout(this._invalid);
+    }
+
+    this._invalid = null;
 };
 
 Object.defineProperty(HTMLElement.prototype, "explicitWith", {
@@ -556,7 +704,7 @@ Object.defineProperty(HTMLElement.prototype, "tooltipData", (function () {
     function showTooltip(event) {
         var target = event.currentTarget;
         var renderer = F$(target.tooltipRenderer);
-            renderer.show(target, target.tooltipData);
+        renderer.show(target, target.tooltipData);
 
         target.on('mouseout', hideTooltip);
     }
@@ -597,7 +745,7 @@ Object.defineProperty(HTMLElement.prototype, "tooltipRenderer", {
 });
 
 
-Object.defineProperty(HTMLElement.prototype, "disabled", (function() {
+Object.defineProperty(HTMLElement.prototype, "disabled", (function () {
     function stopEvent(event) {
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -629,21 +777,34 @@ Object.defineProperty(HTMLElement.prototype, "disabled", (function() {
     };
 })());
 
+document.documentElement.on('mousemove', function(event) {
+    document.mouseX = event.clientX;
+    document.mouseY = event.clientY;
+}, true);
+
+HTMLElement.prototype.containsMouse = function() {
+    var rect = this.getBoundingClientRect();
+
+    return rect.left <= document.mouseX
+        && rect.right >= document.mouseX
+        && rect.top <= document.mouseY
+        && rect.bottom >= document.mouseY;
+};
 
 var FunUI = {};
 
 FunUI.CSS_PREFIX = 'F-';
 
 FunUI.utils = {};
-FunUI.utils.alert = function (content, onYes) {
-    F$('alert').show(F_('alert.title'), content, onYes);
+FunUI.utils.alert = function (content, onYes, title) {
+    F$('alert').show(title || F_('alert.title'), content, onYes);
 };
 
-FunUI.utils.confirm = function (content, onYes, onNo) {
-    F$('confirm').show(F_('confirm.title'), content, onYes, onNo);
+FunUI.utils.confirm = function (content, onYes, onNo, title) {
+    F$('confirm').show(title || F_('confirm.title'), content, onYes, onNo);
 };
 
-FunUI.utils.attachSound = function(targetNode) {
+FunUI.utils.attachSound = function (targetNode) {
     targetNode.addClass("withClickSound");
 };
 
@@ -694,7 +855,19 @@ FunUI.utils.extend = function () {
     return target;
 };
 
-FunUI.utils.parseAnnotations = function() {
+FunUI.utils.getBoundMethod = function(obj, methodName) {
+    if (typeof obj[methodName] != 'function') {
+        throw new Error('invalid method ' + methodName);
+    }
+
+    if (!obj.hasOwnProperty(methodName)) {
+        obj[methodName] = obj[methodName].bind(obj);
+    }
+
+    return obj[methodName]
+};
+
+FunUI.utils.parseAnnotations = function () {
     /**
      * @param {Element} node
      */
@@ -712,16 +885,18 @@ FunUI.utils.parseAnnotations = function() {
         var annotation = Object.create(definition);
 
         var attributes = node.attributes;
-        for(var i = 0, length = attributes.length; i < length; i ++) {
+        for (var i = 0, length = attributes.length; i < length; i++) {
             var attribute = attributes[i];
             annotation[attribute.name] = attribute.value.literal;
         }
 
-        var children = node.children;
+        var children = node.childNodes;
         annotation.children = [];
-        for(i = 0, length = children.length; i < length; i ++) {
+        for (i = 0, length = children.length; i < length; i++) {
             var child = child[i];
-            annotation.children.push(nodeToAnnotation(child));
+            if (child.nodeType == Node.ELEMENT_NODE) {
+                annotation.children.push(nodeToAnnotation(child));
+            }
         }
 
         return annotation;
@@ -732,7 +907,7 @@ FunUI.utils.parseAnnotations = function() {
      * @param {string} key
      * @param {FunUI.utils.Reference} nameRef
      */
-    return function(key, nameRef) {
+    return function (key, nameRef) {
         key = key.trim();
         if (key.indexOf("<") != 0) {
             if (nameRef instanceof FunUI.utils.Reference) {
@@ -741,7 +916,7 @@ FunUI.utils.parseAnnotations = function() {
             return null;
         }
 
-        var term =  key.lastIndexOf(">");
+        var term = key.lastIndexOf(">");
         if (term < 0) {
             throw new Error("invalidate annotation format");
         }
@@ -755,10 +930,12 @@ FunUI.utils.parseAnnotations = function() {
 
         var parser = new DOMParser();
         var doc = parser.parseFromString(text, "application/xml");
-        var nodes = doc.documentElement.children;
+        var nodes = doc.documentElement.childNodes;
         var annotations = [];
-        for(var i = 0; i < nodes.length; i ++) {
-            annotations.push(nodeToAnnotation(nodes[i]));
+        for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i].nodeType == Node.ELEMENT_NODE) {
+                annotations.push(nodeToAnnotation(nodes[i]));
+            }
         }
 
         return annotations;
@@ -797,9 +974,9 @@ FunUI.utils.relay = document.createElement("div");
                 }
             }
 
-            var text = this._embeddedLanguages[this._language][key] || "";
+            var text = (this._embeddedLanguages && this._embeddedLanguages[this._language][key]) || "";
             if (params) {
-                text = text.replace(/\[\[([^\]]+)]]/g, function(pattern, key) {
+                text = text.replace(/\[\[([^\]]+)]]/g, function (pattern, key) {
                     return params[key];
                 });
             }
@@ -1117,7 +1294,7 @@ Object.defineProperty(FunUI.utils.ArrayView.prototype, "isFirstPage", {
 
 Object.defineProperty(FunUI.utils.ArrayView.prototype, "isDirty", {
     get: function () {
-        return this._dirty == 0;
+        return this._dirty;
     }
 });
 
@@ -1227,6 +1404,109 @@ FunUI.utils.ArrayView.prototype._tidy = function () {
     this._currentView = view.slice(start, start + this.pageSize);
 };
 
+FunUI.utils.ajax = function () {
+    /**
+     * @see https://github.com/knowledgecode/jquery-param/blob/master/jquery-param.js
+     * @param a
+     * @return {string}
+     */
+    function param(a) {
+        if (typeof a == "string") {
+            return a;
+        }
+
+        var s = [], rbracket = /\[\]$/,
+            isArray = function (obj) {
+                return Object.prototype.toString.call(obj) === '[object Array]';
+            }, add = function (k, v) {
+                v = typeof v === 'function' ? v() : v === null ? '' : v === undefined ? '' : v;
+                s[s.length] = encodeURIComponent(k) + '=' + encodeURIComponent(v);
+            }, buildParams = function (prefix, obj) {
+                var i, len, key;
+
+                if (prefix) {
+                    if (isArray(obj)) {
+                        for (i = 0, len = obj.length; i < len; i++) {
+                            if (rbracket.test(prefix)) {
+                                add(prefix, obj[i]);
+                            } else {
+                                buildParams(prefix + '[' + (typeof obj[i] === 'object' ? i : '') + ']', obj[i]);
+                            }
+                        }
+                    } else if (obj && String(obj) === '[object Object]') {
+                        for (key in obj) {
+                            buildParams(prefix + '[' + key + ']', obj[key]);
+                        }
+                    } else {
+                        add(prefix, obj);
+                    }
+                } else if (isArray(obj)) {
+                    for (i = 0, len = obj.length; i < len; i++) {
+                        add(obj[i].name, obj[i].value);
+                    }
+                } else {
+                    for (key in obj) {
+                        buildParams(key, obj[key]);
+                    }
+                }
+                return s;
+            };
+
+        return buildParams('', a).join('&').replace(/%20/g, '+');
+    }
+
+    function createRequest() {
+        if (window.XMLHttpRequest) {
+            return new XMLHttpRequest();
+        } else {
+            return new ActiveXObject("Microsoft.XMLHTTP");
+        }
+    }
+
+    function send(method, url, callback, data, headers) {
+        var request = createRequest();
+        request.onreadystatechange = function () {
+            if (this.readyState == 4) {
+                callback(this);
+            }
+        };
+
+        request.open(method, url);
+        if ((method == 'POST' || method == "PUT") && !headers["Content-type"]) {
+            request.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+        }
+
+        if (headers) {
+            for (var k in headers) {
+                request.setRequestHeader(k, headers[k]);
+            }
+        }
+
+        if (data) {
+            request.send(param(data));
+        } else {
+            request.send();
+        }
+    }
+
+    var methods = [
+        'HEAD',
+        'OPTIONS',
+        'GET',
+        'PUT',
+        'PATCH',
+        'POST',
+        'DELETE'
+    ];
+    var ajax = {};
+    for (var i = 0; i < methods.length; i ++) {
+        ajax[methods[i].toLocaleLowerCase()] = send.bind(null, methods[i]);
+    }
+
+    return ajax;
+}();
+
+
 FunUI.events = {
     INITIALIZED: 'initialized',
     SELECTED_CHANGED: 'selectedChanged',
@@ -1291,10 +1571,8 @@ FunUI.managers.PopUpManager.addPopUp = function (view, modal, layer) {
         view: view
     });
 
-    view.delayCall(function () {
-        view.fire(popUpEvent);
-        FunUI.managers.PopUpManager.fire(popUpEvent)
-    });
+    view.fire(popUpEvent);
+    FunUI.managers.PopUpManager.fire(popUpEvent);
 };
 /**
  *
@@ -1358,7 +1636,7 @@ FunUI.managers.PopUpManager.removePopUp = function (view) {
         }
     }
 
-    if (!keepModal) {
+    if (!keepModal && this._modalLayer.parentNode == popUpLayer) {
         popUpLayer.removeChild(this._modalLayer);
     }
 };
@@ -1376,8 +1654,8 @@ FunUI.components = {};
  * @mixin
  */
 FunUI.components.Button = {
-    _label : null,
-    _labelField : null,
+    _label: null,
+    _labelField: null,
     __init__: function () {
         FunUI.utils.attachSound(this);
         this._labelField = this.presentLabelChild(true);
@@ -1391,7 +1669,7 @@ FunUI.components.Button = {
     get label() {
         return this._label;
     },
-    commitProperties : function() {
+    commitProperties: function () {
         this._labelField.innerHTML = this._label;
     }
 };
@@ -1402,7 +1680,7 @@ FunUI.components.Button = {
 FunUI.components.Selectable = {
     _selected: false,
     select: function () {
-        this.selected  = true;
+        this.selected = true;
     },
     deselect: function () {
         this.selected = false;
@@ -1421,7 +1699,7 @@ FunUI.components.Selectable = {
         this._selected = selected;
         this.fire(new CustomEvent(FunUI.events.SELECTED_CHANGED));
     },
-    get selected (){
+    get selected() {
         return this._selected;
     }
 };
@@ -1434,7 +1712,7 @@ FunUI.components.TextInput = {
     password: false,
     placeholder: "",
     _lastText: "",
-    _maxLength : -1,
+    _maxLength: -1,
     __init__: function () {
         var node, walk = document.createTreeWalker(this, NodeFilter.SHOW_TEXT, null, false);
         var defaultValue = "";
@@ -1464,7 +1742,7 @@ FunUI.components.TextInput = {
         this.input = input;
         this.text = defaultValue;
     },
-    onKeyDown : function(event) {
+    onKeyDown: function (event) {
         if (event.key == "Enter") {
             this.fire(new CustomEvent(FunUI.events.INPUT_SUBMIT));
         }
@@ -1506,8 +1784,8 @@ FunUI.components.TextInput = {
 FunUI.components.Window = {
     drawingBg: true,
     modal: false,
-    _title : null,
-    _titleField : null,
+    _title: null,
+    _titleField: null,
     __init__: function () {
         if (this.drawingBg) {
             this.presentSubComponent("bg");
@@ -1526,7 +1804,7 @@ FunUI.components.Window = {
     get title() {
         return this._title;
     },
-    commitProperties : function() {
+    commitProperties: function () {
         if (this._titleField) {
             this._titleField.innerHTML = this._title;
         }
@@ -1595,10 +1873,10 @@ FunUI.components.ViewStack = {
  * @mixin
  */
 FunUI.components.TabPage = {
-    _pagesChanged : false,
+    _pagesChanged: false,
     __init__: function () {
         this._pages = this.getSubComponents("F-TabSubPage");
-        for(var i = 0; i < this._pages.length; i ++) {
+        for (var i = 0; i < this._pages.length; i++) {
             var page = this._pages[i];
             page.pageIndex = i;
 
@@ -1609,21 +1887,21 @@ FunUI.components.TabPage = {
         this._pagesChanged = true;
         this.invalidate();
     },
-    excludePage : function(pageIndex) {
+    excludePage: function (pageIndex) {
         if (pageIndex >= 0 && pageIndex < this._pages.length && !this._excludedPages[pageIndex]) {
             this._excludedPages[pageIndex] = true;
             this._pagesChanged = true;
             this.invalidate();
         }
     },
-    includePage : function(pageIndex) {
+    includePage: function (pageIndex) {
         if (pageIndex >= 0 && pageIndex < this._pages.length && !!this._excludedPages[pageIndex]) {
             delete this._excludedPages[pageIndex];
             this._pagesChanged = true;
             this.invalidate();
         }
     },
-    commitProperties : function() {
+    commitProperties: function () {
         if (!this._pagesChanged) {
             return;
         }
@@ -1756,7 +2034,7 @@ FunUI.components.TabPage = {
     get selectedIndex() {
         return this._selectedIndex;
     },
-    _onPageSelectedChanged : function(event) {
+    _onPageSelectedChanged: function (event) {
         var page = event.currentTarget;
         if (!page.selected) {
             return;
@@ -1764,7 +2042,7 @@ FunUI.components.TabPage = {
 
         this.selectedIndex = this._pages.indexOf(page);
     },
-    _excludedPages : null,
+    _excludedPages: null,
     _pages: null,
     _zIndexSeq: 0
 };
@@ -1772,9 +2050,9 @@ FunUI.components.TabPage = {
 FunUI.components.TabSubPage = FunUI.utils.extend(
     FunUI.components.Selectable,
     {
-        _title : null,
-        _content : null,
-        __init__ : function() {
+        _title: null,
+        _content: null,
+        __init__: function () {
             this._title = this.getSubComponent('title');
             this._content = this.getSubComponent('content');
 
@@ -1810,14 +2088,14 @@ FunUI.components.Tooltip = {
             this, false, FunUI.managers.PopUpManager.LAYER_PERIPHERY
         );
 
-        document.on('click', this.tryHide, true);
+        document.addEventListener('click', this.tryHide, true);
         this.delayCall(this._show);
     },
     hide: function () {
-        document.off('click', this.tryHide, true);
+        document.removeEventListener('click', this.tryHide, true);
         FunUI.managers.PopUpManager.removePopUp(this);
     },
-    tryHide : function(event) {
+    tryHide: function (event) {
         if (event.target != this._host && !this._host.contains(event.target)) {
             this.hide();
         }
@@ -1827,6 +2105,9 @@ FunUI.components.Tooltip = {
      * @param {HTMLElement} host
      */
     position: function (host) {
+        if (!this.parentNode) {
+            return;
+        }
         var hostClientRect = host.getBoundingClientRect();
         var myClientRect = this.getBoundingClientRect();
 
@@ -1906,10 +2187,6 @@ FunUI.components.List = {
         return this._arrayView;
     },
     render: function () {
-        this.delayCall(this.doRender);
-    },
-    doRender : function() {
-
         var data;
         if (!this._arrayView) {
             data = [];
@@ -2258,7 +2535,7 @@ FunUI.components.PageLabel = {
     get dataProvider() {
         return this._arrayView;
     },
-    render : function() {
+    render: function () {
         if (!this._arrayView) {
             this.innerHTML = "";
         } else {
@@ -2271,7 +2548,7 @@ FunUI.components.PageLabel = {
  * @mixin
  */
 FunUI.components.PageCtrl = {
-    _mouseDown : false,
+    _mouseDown: false,
     __init__: function () {
         FunUI.utils.attachSound(this);
         this.presentLabelChild();
@@ -2416,22 +2693,22 @@ FunUI.components.DropDownList = {
 };
 
 FunUI.components.ProgressBar = {
-    _indicators : null,
-    _base : null,
-    _progresses : null,
-    __init__ : function() {
+    _indicators: null,
+    _base: null,
+    _progresses: null,
+    __init__: function () {
         this._indicators = this.querySelectorAll('.indicator');
     },
-    setProgresses : function () {
+    setProgresses: function () {
         this._base = arguments[0];
         this._progresses = Array.prototype.slice.call(arguments, 1);
         this.invalidate();
     },
-    getProgress : function (index) {
+    getProgress: function (index) {
         return Math.floor(this._progresses[index] * 100 / this._base) / 100;
     },
-    commitProperties : function() {
-        for (var i= 0; i < this._indicators.length; i ++) {
+    commitProperties: function () {
+        for (var i = 0; i < this._indicators.length; i++) {
             this._indicators[i].style.width = Math.floor(this._progresses[i] * 100 / this._base) + "%";
         }
     }
@@ -2468,7 +2745,7 @@ FunUI.components.Prompt = {
         });
 
         if (this._queue.length == 1) {
-            this.delayCall(this._renderFirst);
+            this._renderFirst();
         }
 
         FunUI.managers.PopUpManager.addPopUp(this, true, FunUI.managers.PopUpManager.LAYER_TOP);
@@ -2512,9 +2789,9 @@ FunUI.annotations = {};
 
 FunUI.annotations.Observer = {
     selector: null,
-    event : null,
-    useCapture : false,
-    apply : function(obj, value) {
+    event: null,
+    useCapture: false,
+    apply: function (obj, value) {
         if (typeof value != "function") {
             throw new Error("invalid listener");
         }
@@ -2524,8 +2801,7 @@ FunUI.annotations.Observer = {
             obj.on(this.event, value, this.useCapture);
         } else {
             var elements = obj.querySelectorAll(this.selector);
-            for(var i = 0; i < elements.length; i ++)
-            {
+            for (var i = 0; i < elements.length; i++) {
                 elements[i].on(this.event, value, this.useCapture);
             }
         }
@@ -2535,7 +2811,7 @@ FunUI.annotations.Observer = {
 };
 
 FunUI.annotations.Delay = {
-    apply : function(obj, value) {
+    apply: function (obj, value) {
         if (typeof value != "function") {
             throw new Error("invalid function");
         }
@@ -2544,11 +2820,20 @@ FunUI.annotations.Delay = {
     }
 };
 
+FunUI.utils.Countdown = function() {
+    function Countdown() {
+        FunUI.utils.EventTarget.call(this);
+    }
+
+    Countdown.prototype.start = function() {
+
+    }
+};
+
 FunUI.layouts = {};
 FunUI.traits = {};
 FunUI.views = {};
 
-Object.freeze(FunUI.CSS_PREFIX);
 Object.freeze(FunUI.utils);
 Object.freeze(FunUI.events);
 Object.freeze(FunUI.managers);
@@ -2557,6 +2842,7 @@ Object.freeze(FunUI);
 
 var F$ = FunUI.utils.getView;
 var F$ArrayView = FunUI.utils.ArrayView;
+var F$ajax = FunUI.utils.ajax;
 var F$alert = FunUI.utils.alert;
 var F$confirm = FunUI.utils.confirm;
 var F_ = FunUI.lang.getEmbeddedText;
