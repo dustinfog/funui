@@ -23,6 +23,10 @@ if (!Math.sign) {
 
 if (typeof Object.values != "function") {
     Object.values = function (obj) {
+        if (Array.isArray(obj)) {
+            return obj;
+        }
+
         var values = [];
         for (var key in obj) {
             if (obj.hasOwnProperty(key)) {
@@ -471,27 +475,31 @@ HTMLElement.prototype.initFunUI = (function () {
     });
 
     return function () {
-        if (typeof this.funUIInitialized != "undefined") {
+        if (this.funUIInitialized) {
             return false;
         }
 
-        this.funUIInitialized = false;
-
         // parse parameter
-        var immediately = false;
+        var embedded = false;
         var extraTraits = [];
         for (var i = 0, length = arguments.length; i < length; i++) {
             var arg = arguments[i];
-            if (typeof arg == "boolean") {
-                immediately = arg;
+            if (typeof arg === "boolean") {
+                embedded = arg;
             } else {
                 extraTraits.push(arg);
             }
         }
 
         // init children
-        for (i = 0, length = this.children.length; i < length; i++) {
-            this.children[i].initFunUI(immediately);
+        for (i = 0, length = this.childNodes.length; i < length; i++) {
+            var child = this.childNodes[i];
+
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                child.initFunUI(embedded);
+            } else if (embedded && child.nodeType === Node.TEXT_NODE && FunUI.lang.isEnabled()) {
+                child.nodeValue = FunUI.lang.apply(child.nodeValue);
+            }
         }
 
         // collect traits
@@ -1034,11 +1042,8 @@ FunUI.utils.getView = function (viewId) {
         } else {
             return FunUI.traits[viewId];
         }
-    } else if (view.initFunUI() && FunUI.lang.isEnabled()) {
-        var node, walk = document.createTreeWalker(view, NodeFilter.SHOW_TEXT, null, false);
-        while (node = walk.nextNode()) {
-            node.nodeValue = FunUI.lang.apply(node.nodeValue);
-        }
+    } else {
+        view.initFunUI(true);
     }
 
     return view;
@@ -1664,13 +1669,17 @@ FunUI.components.Button = {
     },
     set label(v) {
         this._label = v;
+        this._labelChanged = true;
         this.invalidate();
     },
     get label() {
         return this._label;
     },
     commitProperties: function () {
-        this._labelField.innerHTML = this._label;
+        if (this._labelChanged) {
+            this._labelField.innerHTML = this._label;
+            this._labelChanged = false;
+        }
     }
 };
 
@@ -1799,14 +1808,16 @@ FunUI.components.Window = {
     },
     set title(v) {
         this._title = v;
+        this._titleChanged = true;
         this.invalidate();
     },
     get title() {
         return this._title;
     },
     commitProperties: function () {
-        if (this._titleField) {
+        if (this._titleChanged) {
             this._titleField.innerHTML = this._title;
+            this._titleChanged = false;
         }
     },
     open: function () {
@@ -2206,23 +2217,22 @@ FunUI.components.List = {
                 item = items[i];
             } else {
                 item = this._itemProto.cloneNode(true);
-                item.initFunUI(true, this.itemRenderer);
+                item.initFunUI(this.itemRenderer);
                 item.list = this;
                 this.appendChild(item);
                 items.push(item);
+            }
 
+            if (typeof item.render == 'function') {
+                item.render(datum, i);
+                item.data = datum;
+                item.index = i;
             }
 
             if (this.isIndexSelected(i)) {
                 item.select();
             } else {
                 item.deselect();
-            }
-            item.index = i;
-            item.data = datum;
-
-            if (typeof item.render == 'function') {
-                item.render(datum, i);
             }
         }
 
@@ -2232,6 +2242,7 @@ FunUI.components.List = {
                 item.clear();
             }
             item.data = null;
+            item.index = -1;
             this.removeChild(item);
         }
 
@@ -2369,6 +2380,15 @@ FunUI.components.ItemRenderer = FunUI.utils.extend(
         list: null,
         index: -1,
         data: null,
+        __init__ : function() {
+            this.on(FunUI.events.SELECTED_CHANGED, this._onSelectChanged);
+        },
+        _onSelectChanged : function() {
+            var list = this.list;
+            if (this.selected && list) {
+                list.selectItem(this.index);
+            }
+        },
         /**
          * @abstract
          * @param {*} data
@@ -2637,7 +2657,7 @@ FunUI.components.DropDownList = {
         this.list = document.createElement("ul");
         this.list.className = "F-List forDropDownList";
         this.list.presentSubComponent("F-ItemRenderer", "li");
-        this.list.initFunUI(true, {
+        this.list.initFunUI({
             itemRenderer: this.itemRenderer
         });
 
@@ -2708,6 +2728,9 @@ FunUI.components.ProgressBar = {
         return Math.floor(this._progresses[index] * 100 / this._base) / 100;
     },
     commitProperties: function () {
+        if (!this._progresses) {
+            return;
+        }
         for (var i = 0; i < this._indicators.length; i++) {
             this._indicators[i].style.width = Math.floor(this._progresses[i] * 100 / this._base) + "%";
         }
