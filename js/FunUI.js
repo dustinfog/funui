@@ -772,7 +772,11 @@ Object.defineProperty(HTMLElement.prototype, "tooltipData", (function () {
     function showTooltip(event) {
         var target = event.currentTarget;
         var renderer = F$(target.tooltipRenderer);
-        renderer.show(target, target.tooltipData);
+        if (renderer) {
+            renderer.show(target, target.tooltipData);
+        } else {
+            console.warn("invalid tooltip renderer " + target.tooltipRenderer);
+        }
 
         target.on('mouseout', hideTooltip);
     }
@@ -780,7 +784,11 @@ Object.defineProperty(HTMLElement.prototype, "tooltipData", (function () {
     function hideTooltip(event) {
         var target = event.currentTarget;
         var renderer = F$(target.tooltipRenderer);
-        renderer.hide();
+        if (renderer) {
+            renderer.hide();
+        } else {
+            console.warn("invalid tooltip renderer " + target.tooltipRenderer);
+        }
 
         target.off('mouseout', hideTooltip);
     }
